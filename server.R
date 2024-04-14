@@ -4,6 +4,39 @@ server <- function(input, output, session) {
   
   
   
+  get_cov_from_ui <- reactive({
+    
+    # print(input$demos_age)
+    # print(input$demos_sex)
+    # print(input$demos_wei)
+    # print(input$demos_hei)
+    # print(input$demos_edu)
+    # print(input$demos_hear)
+    # print(input$demos_lone)
+    # print(input$demos_alc)
+    # print(input$demos_smok)
+    # print(input$demos_cran)
+    # print(input$demos_hyp)
+    # print(input$demos_dep)
+    # print(input$demos_t2d)
+    
+    mk_cov_df_from_ui(
+      age = input$demos_age, 
+      sex = input$demos_sex, 
+      bmi = calc_bmi(input$demos_wei, input$demos_hei), 
+      edu = input$demos_edu, 
+      hear = input$demos_hear, 
+      iso = input$demos_lone, 
+      alc = input$demos_alc, 
+      smk = input$demos_smok,  
+      binj = input$demos_cran, 
+      hbp = input$demos_hyp, 
+      dep = input$demos_dep, 
+      t2d = input$demos_t2d
+    )
+  })  
+    
+  
   get_non_sit <- reactive({
     input$tu_slp + input$tu_lpa + input$tu_vpa
   }) 
@@ -127,11 +160,86 @@ server <- function(input, output, session) {
   output$gg_cur <- renderPlot(ggplot1())
   
   
-  plotly1 <- reactive({
+  
+  get_opt_cmp_from_ui <- reactive({
+    
+    this_cov_df <- get_cov_from_ui()
+    
+    this_strata_grid <- 
+      get_strata_grid(
+        s = this_cov_df[["sex"]], 
+        a = this_cov_df[["age"]], 
+        b = this_cov_df[["bmi"]]
+      )[, cmp_nms]
+    print(this_strata_grid)
+    
+    
+    grid_predictor_df <- 
+      mk_predictor_df(cmp_df = this_strata_grid, cov_df = this_cov_df)
+    # print(as_tibble(grid_predictor_df))
+    # print(as_tibble(get_opt_cmp_from_preds(grid_predictor_df)))
+    grid_opt_df <- get_opt_cmp_from_preds(grid_predictor_df)
+    
+    grid_opt_df
+    
+  })
+  
+  get_curr_cmp_pred <- reactive({
+    
+    this_cov_df <- get_cov_from_ui()
     
     dat <- get_cur_day()
-    dat <- dat %>% rename(curr_day = value)
-    dat$ideal_day <- c(ideal_day_vec)
+    # print(dat)
+    row_v <- dat[["group"]]
+    # print(row_v)
+    # print(dat[["value"]])
+    # print(class(dat[["value"]]))
+    # print(dat[["value"]][row_v == "Sleep"])
+    # print(dat[["value"]][row_v == "Sit"])
+    # print(dat[["value"]][row_v == "Light PA"])
+    # print(dat[["value"]][row_v == "Mod-vig PA"])
+    
+    this_cmp_df <- 
+      mk_cmp_df_from_ui(
+        sleep = dat[["value"]][row_v == "Sleep"], 
+        sb = dat[["value"]][row_v == "Sit"], 
+        lpa = dat[["value"]][row_v == "Light PA"], 
+        mvpa = dat[["value"]][row_v == "Mod-vig PA"]
+      )
+    # print(this_cmp_df)
+    # print(class(this_cmp_df))
+    # print(class(this_cov_df))
+    # print(nrow(this_cmp_df))
+    # print(nrow(this_cov_df))
+    
+    this_predictor_df <- 
+      mk_predictor_df(cmp_df = this_cmp_df, cov_df = this_cov_df)
+    this_predict <- mk_pred_over_ilrs(this_predictor_df)
+    
+    list(dat = dat, y_hat = this_predict)
+    
+  })
+  
+  plotly1 <- reactive({
+    
+    grid_opt_df <- get_opt_cmp_from_ui()
+    lst_obj <- get_curr_cmp_pred()
+    curr_pred <- lst_obj$y_hat
+    
+    dat <- lst_obj$dat %>% rename(curr_day = value)
+    # print(dat)
+    ideal_day_calc <- 
+      c(
+        "Sleep" = grid_opt_df[["sleep"]], # / 60, 
+        "Light PA" = grid_opt_df[["lpa"]], # / 60, 
+        "Sit" = grid_opt_df[["sb"]], # / 60, 
+        "Mod-vig PA" = grid_opt_df[["mvpa"]] # / 60, 
+      )
+    print(dat)
+    print(ideal_day_calc)
+    
+    dat$ideal_day <- ideal_day_calc 
+      
     
     comp_names <- 
       c(
@@ -231,8 +339,30 @@ server <- function(input, output, session) {
   
   output$ui0 <- renderUI({
     
+    grid_opt_df <- get_opt_cmp_from_ui()
+    lst_obj <- get_curr_cmp_pred()
+    curr_pred <- lst_obj$y_hat
+    dat <- lst_obj$dat 
+    
+    
+    # print(dat)
+    ideal_day_calc <- 
+      c(
+        "Sleep" = grid_opt_df[["sleep"]], # / 60, 
+        "Light PA" = grid_opt_df[["lpa"]], # / 60, 
+        "Sit" = grid_opt_df[["sb"]], # / 60, 
+        "Mod-vig PA" = grid_opt_df[["mvpa"]] # / 60, 
+      )
+    print(dat)
+    print(ideal_day_calc)
+    
+    
     # "Sleep", "Light PA", "Sit", "Mod-vig PA"
-    change_req <- c(ideal_day_vec) - get_cur_day()$value
+    print(ideal_day_calc)
+    curr_day <- dat$value
+    names(curr_day) <- dat$group
+    print(curr_day)
+    change_req <- ideal_day_calc - curr_day
     
     card(
       full_screen = TRUE,
@@ -248,28 +378,53 @@ server <- function(input, output, session) {
             }
         ),
         box(width = 12,
-            p(strong("To reach your"), strong("'ideal'", style = "color: #00b0f0"), strong("day, you need to change:"), style = "text-align: center; color: #000000"),
+            p(
+              strong("To reach your"), 
+              strong("'ideal'", style = "color: #00b0f0"), 
+              strong("day, you should aim to change:"), 
+              style = "text-align: center; color: #000000"
+            ),
             p(),    
             p(),
             p(strong("Sleep"), "by", style = "text-align: center; size: 10;"),
             p(
               paste(add_sgn(change_req[1]), "hours"), 
-              style = paste0("color: ", get_sgn_hex_col(change_req[1]), "; size: 20; text-align: center;")),
+              style = 
+                paste0(
+                  "color: ", get_sgn_hex_col(change_req[1]), "; size: 20; text-align: center;"
+                )
+            ),
             p(),
             p(strong("Sitting"), "by", style = "text-align: center; size: 10;"),
             p(
               paste(add_sgn(change_req[3]), "hours"), 
-              style = paste0("color: ", get_sgn_hex_col(change_req[3]), "; size: 20; text-align: center;")),
+              style = 
+                paste0(
+                "color: ", get_sgn_hex_col(change_req[3]), "; size: 20; text-align: center;"
+                )
+            ),
             p(),
             p(strong("Light physical activity"), "by", style = "text-align: center; size: 10;"),
             p(
               paste(add_sgn(change_req[2]), "hours"), 
-              style = paste0("color: ", get_sgn_hex_col(change_req[2]), "; size: 20; text-align: center;")),
+              style = 
+                paste0(
+                  "color: ", get_sgn_hex_col(change_req[2]), "; size: 20; text-align: center;"
+                )
+            ),
             p(),
-            p(strong("Moderate-vigorous physical activity"), "by", style = "text-align: center; size: 10;"),
+            p(
+              strong("Moderate-vigorous physical activity"), 
+              "by", 
+              style = "text-align: center; size: 10;"
+            ),
             p(
               paste(add_sgn(change_req[4]), "hours"), 
-              style = paste0("color: ", get_sgn_hex_col(change_req[4]), "; size: 20; text-align: center;"))
+              style = 
+                paste0(
+                  "color: ", get_sgn_hex_col(change_req[4]), "; size: 20; text-align: center;"
+                )
+            )
         ),
         tags$script(HTML("$('.box').eq(1).css('border', '2px solid #999999');"))
         # , box(width = 12,
