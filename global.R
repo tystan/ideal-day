@@ -28,6 +28,9 @@ use_plotly <- TRUE
 
 # ---- data ----
 
+
+
+
 cmp_nms <- c("sleep", "sb", "lpa", "mvpa")
 ilr_nms <- paste0("ilr", 1:(length(cmp_nms) - 1))
 
@@ -73,11 +76,16 @@ cols_rm_names   <- read_rds(file = "dat/cols_rm_names.rds")
 xlvl_lst        <- read_rds(file = "dat/xlvl_lst.rds")
 best_mod_coefs  <- read_rds(file = "dat/best_mod_coefs.rds")
 in_contour_grid <- read_rds(file = "dat/grid_in_contours.rds")
+m_and_v_ilrs    <- read_rds(file = "dat/m_and_v_ilrs.rds")
 
-
-# in_contour_grid %>%
-#   distinct(strata_id, sex, age_c, bmi_c) %>%
-#  knitr::kable(.)
+m_and_v_ilrs <- 
+  in_contour_grid %>%
+  distinct(strata_id, sex, age_c, bmi_c) %>%
+  inner_join(., m_and_v_ilrs, c("sex", "age_c", "bmi_c"))
+  
+m_and_v_ilrs %>%
+  distinct(strata_id, sex, age_c, bmi_c) %>%
+  knitr::kable(.)
 
 # |strata_id |sex    |age_c |bmi_c  |
 # |:---------|:------|:-----|:------|
@@ -89,6 +97,13 @@ in_contour_grid <- read_rds(file = "dat/grid_in_contours.rds")
 # |F         |Male   |<65   |ow     |
 # |G         |Male   |65+   |not_ow |
 # |H         |Male   |65+   |ow     |
+
+m_and_v_ilrs <- 
+  m_and_v_ilrs %>%
+  select(-sex, -age_c, -bmi_c) 
+
+
+
 
 in_contour_grid <- 
   in_contour_grid %>% 
@@ -127,17 +142,20 @@ get_strata_grid <- function(s, a, b) {
 # get_strata_grid(s = "Male", a = 64, b = 21)
 
 
-get_strata_grid <- function(s, a, b) {
+get_strata_m_and_v <- function(s, a, b) {
   
   wch_strata <- get_strata_id(s = s, a = a, b = b)
   
-  in_contour_grid %>% 
+  m_and_v_ilrs %>% 
     dplyr::filter(strata_id == wch_strata)
   
 }
-
-
-
+# get_strata_m_and_v(s = "Male", a = 64, b = 21)
+# get_strata_m_and_v(s = "Male", a = 64, b = 21)[["m"]][[1]]
+# get_strata_m_and_v(s = "Male", a = 64, b = 21)[["v"]][[1]]
+# m_and_v_ilrs %>% 
+#   dplyr::filter(strata_id == "C") %>%
+#   select(-strata_id) 
 
 get_col_types <- function(d) sapply(d, function(x) class(x)[1])
 
@@ -270,25 +288,38 @@ get_opt_cmp_from_preds <- function(predictor_df, propn = 0.05) {
   
   print(tmp_opt)
   
+  y_hat_quant <- 
+    tmp_opt %>% 
+    pull(y_hat) %>% 
+    quantile(., 0.5) %>% 
+    unname(.)
+  
   tmp_opt <- 
     tmp_opt %>% 
     summarise(across(everything(), mean))
   
+  
   print(tmp_opt)
+  print(c(y_hat_quant = y_hat_quant, y_hat_ave = tmp_opt[["y_hat"]]))
   
   tmp_opt <- 
     tmp_opt %>%
     select(all_of(ilr_nms)) %>%
-    mk_comp(.)  
+    mk_comp(.) 
   
   print(tmp_opt)
   
-  tmp_opt %>% 
-    summarise(across(everything(), \(x) round(x / 60, 1)))
+  tmp_opt <- 
+    tmp_opt %>% 
+    mutate(across(everything(), \(x) round(x / 60, 1))) %>%
+    mutate(y_hat = y_hat_quant)
   
   # %>% arrange(desc(sb), desc(mvpa)) 
   
   # tmp_opt[1, ]
+  
+  # return(tmp_opt)
+  return(list(opt_cmp = tmp_opt, y_dist = y_hat))
   
 }
 
@@ -323,7 +354,7 @@ mk_cov_df_from_ui <- function(age, sex, bmi, edu, hear, iso, alc, smk, binj, hbp
   
   
 
-mk_cmp_df_from_ui <- function(sleep, sb, lpa, mvpa, verbose = FALSE) {
+mk_cmp_df_from_ui <- function(sleep, sb, lpa, mvpa, strata_id = NULL) {
   
   out_df <- cmp_default
   
@@ -335,9 +366,19 @@ mk_cmp_df_from_ui <- function(sleep, sb, lpa, mvpa, verbose = FALSE) {
   out_df[, cmp_nms] <- 
     1440 * out_df[, cmp_nms] / sum(out_df[, cmp_nms])
   
-  if (verbose) {
-    print(as_tibble(out_df))
-  }
+  # if (!is.null(strata_id)) {
+  #   cat("NOTE the mk_cmp_df_from_ui() composition:\n")
+  #   print(as_tibble(out_df))
+  #   cat("is within the 0.8 percentile?:\n")
+  #   mv_lst <- m_and_v_ilrs %>% dplyr::filter(strata_id == strata_id)
+  #   print(is_within_constraint(
+  #     mk_ilr(out_df[1, ]), 
+  #     mv_lst[["m"]][[1]], 
+  #     mv_lst[["v"]][[1]], 
+  #     max_p = 0.8
+  #   ))
+  # 
+  # }
   
   return(out_df)
   
@@ -462,6 +503,40 @@ demos_smok_choices <- c(
 
 # ---- funcs ----
 
+
+is_within_constraint <- function(z, m_z, v_z, max_p = 0.8) {
+  pchisq(q = mahalanobis(z, m_z, v_z), df = length(z)) <= max_p
+}
+# is_within_constraint(rep(0, 3), rep(0, 3), diag(3))
+# is_within_constraint(rep(1, 3), rep(0, 3), diag(3))
+# is_within_constraint(rep(2, 3), rep(0, 3), diag(3))
+
+
+
+check_good_delta <- function(x_new, x_cur, x_opt, p = 1 / 3) {
+  x_new >= (p * x_opt + (1 - p) * x_cur) 
+}
+### testing
+# check_good_delta(1.4, 1, 2)
+# check_good_delta(1.2, 1, 2)
+# check_good_delta(-1.6, -2, -1)
+# check_good_delta(-1.7, -2, -1)
+# check_good_delta(-99, -200, 100)
+# check_good_delta(-100, -200, 100)
+# check_good_delta(-101, -200, 100)
+
+check_bad_delta <- function(x_new, x_cur, x_opt, p = 1 / 3) {
+  x_new <= ((1 + p) * x_cur - p * x_opt ) 
+}
+### testing
+check_bad_delta(0.6, 1, 2)
+check_bad_delta(0.7, 1, 2)
+check_bad_delta(-1.2, 1, 2)
+check_bad_delta(-2.6, -2, -1)
+check_bad_delta(-2.3, -2, -1)
+check_bad_delta(-299, -200, 100)
+check_bad_delta(-300, -200, 100)
+check_bad_delta(-301, -200, 100)
 
 calc_bmi <- function(w_kg, h_cm) {
   as.numeric(w_kg) / (as.numeric(h_cm) / 100)^2

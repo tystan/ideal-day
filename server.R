@@ -176,18 +176,32 @@ server <- function(input, output, session) {
     
     grid_predictor_df <- 
       mk_predictor_df(cmp_df = this_strata_grid, cov_df = this_cov_df)
-    # print(as_tibble(grid_predictor_df))
+    print(as_tibble(grid_predictor_df))
     # print(as_tibble(get_opt_cmp_from_preds(grid_predictor_df)))
-    grid_opt_df <- get_opt_cmp_from_preds(grid_predictor_df)
+    grid_opt_obj <- get_opt_cmp_from_preds(grid_predictor_df)
     
-    grid_opt_df
+    grid_opt_obj
     
   })
   
   get_curr_cmp_pred <- reactive({
     
     this_cov_df <- get_cov_from_ui()
-    
+    print(
+      tibble(
+        s = this_cov_df[["sex"]], 
+        a = this_cov_df[["age"]], 
+        b = this_cov_df[["bmi"]]
+      )
+    )
+    this_strata <- 
+      get_strata_id(
+        s = this_cov_df[["sex"]], 
+        a = this_cov_df[["age"]], 
+        b = this_cov_df[["bmi"]]
+      )
+    print(this_strata)
+      
     dat <- get_cur_day()
     # print(dat)
     row_v <- dat[["group"]]
@@ -205,8 +219,9 @@ server <- function(input, output, session) {
         sb = dat[["value"]][row_v == "Sit"], 
         lpa = dat[["value"]][row_v == "Light PA"], 
         mvpa = dat[["value"]][row_v == "Mod-vig PA"]
+        # strata_id = this_strata
       )
-    # print(this_cmp_df)
+    print(this_cmp_df)
     # print(class(this_cmp_df))
     # print(class(this_cov_df))
     # print(nrow(this_cmp_df))
@@ -216,13 +231,19 @@ server <- function(input, output, session) {
       mk_predictor_df(cmp_df = this_cmp_df, cov_df = this_cov_df)
     this_predict <- mk_pred_over_ilrs(this_predictor_df)
     
-    list(dat = dat, y_hat = this_predict)
+    list(dat = dat, y_hat = this_predict, strata_id = this_strata)
     
   })
   
   plotly1 <- reactive({
     
-    grid_opt_df <- get_opt_cmp_from_ui()
+    grid_opt_obj <- get_opt_cmp_from_ui()
+    grid_opt_df <- grid_opt_obj$opt_cmp
+    grid_ys <- grid_opt_obj$y_dist
+    
+    print(grid_opt_df)
+    print(grid_ys)
+    
     lst_obj <- get_curr_cmp_pred()
     curr_pred <- lst_obj$y_hat
     
@@ -339,7 +360,11 @@ server <- function(input, output, session) {
   
   output$ui0 <- renderUI({
     
-    grid_opt_df <- get_opt_cmp_from_ui()
+    
+    grid_opt_obj <- get_opt_cmp_from_ui()
+    grid_opt_df <- grid_opt_obj$opt_cmp
+    grid_ys <- grid_opt_obj$y_dist
+    
     lst_obj <- get_curr_cmp_pred()
     curr_pred <- lst_obj$y_hat
     dat <- lst_obj$dat 
@@ -437,38 +462,148 @@ server <- function(input, output, session) {
   })
   
   
+  get_realloc_cmp <- reactive({
+  # update any move
+      c(
+        sleep = input$slide_slp / 60, 
+        sb = input$slide_sed / 60, 
+        lpa = input$slide_lpa / 60, 
+        mvpa = input$slide_vpa / 60
+      )
+  
+  })
+  
+  get_new_cmp_pred <- reactive({
+    
+    this_cov_df <- get_cov_from_ui()
+    
+    dat <- get_cur_day()
+    row_v <- dat[["group"]]
+    orig_alloc <-
+      c(
+        sleep = dat[["value"]][row_v == "Sleep"], 
+        sb = dat[["value"]][row_v == "Sit"], 
+        lpa = dat[["value"]][row_v == "Light PA"], 
+        mvpa = dat[["value"]][row_v == "Mod-vig PA"]
+      )
+    
+    realloc_delta <- get_realloc_cmp()
+
+    print(orig_alloc)
+    print(realloc_delta)
+    
+    realloc_cmp_df <- 
+      mk_cmp_df_from_ui(
+        sleep = orig_alloc["sleep"] + realloc_delta["sleep"], 
+        sb = orig_alloc["sb"] + realloc_delta["sb"], 
+        lpa = orig_alloc["lpa"] + realloc_delta["lpa"], 
+        mvpa = orig_alloc["mvpa"] + realloc_delta["mvpa"], 
+      )
+
+    
+    realloc_predictor_df <- 
+      mk_predictor_df(cmp_df = realloc_cmp_df, cov_df = this_cov_df)
+    realloc_predict <- mk_pred_over_ilrs(realloc_predictor_df)
+    
+    list(delta = realloc_delta, y_hat = realloc_predict, cmp_df = realloc_cmp_df)
+    
+  })
   
   output$ui1 <- renderUI({
     
-    # update any move
-    curr_realloc <- 
-      input$slide_lpa + input$slide_vpa +
-      input$slide_sed + input$slide_slp
+  # the traffic lights logic/algorithm is:
+  #   * There is a predicted cog value for the user’s current inputs, call this: y_current
+  #   * There is an optimal composition (additionally with the user’s covariates/demographics) 
+  #       with a predicted cog value, call this: y_opt
+  #   * With the user’s reallocation in composition, there is another predicted cog value, 
+  #       call this: y_new
+  # Then:
+  #   [GREEN] light if: (y_new – y_current) >= p * (y_opt – y_current) 
+  #      [[that is, if p = 1/3 say, the change is a third of the way to y_opt in a positive direction]]
+  #   [RED] light if: (y_new – y_current) <= - p * (y_opt – y_current) 
+  #      [[that is, if p = 1/3 say, the change is a third of distance in the opposite direction to y_opt]]
+  #   [ORANGE] light otherwise
     
-    ### intialise before if-else conditions
-    fat_val <- 0 # runif(1) - 0.5 # used to be random
+    dat <- get_cur_day()
+    row_v <- dat[["group"]]
+    this_cmp_df <- 
+      mk_cmp_df_from_ui(
+        sleep = dat[["value"]][row_v == "Sleep"], 
+        sb = dat[["value"]][row_v == "Sit"], 
+        lpa = dat[["value"]][row_v == "Light PA"], 
+        mvpa = dat[["value"]][row_v == "Mod-vig PA"]
+        # strata_id = this_strata
+      )
+
+    grid_opt_obj <- get_opt_cmp_from_ui()
+    grid_opt_df <- grid_opt_obj$opt_cmp
+    grid_ys <- grid_opt_obj$y_dist
+    y_opt <- grid_opt_df[["y_hat"]]
     
-    if (input$slide_vpa >= 3) {
-      fat_val <- 0.5
-    } else if (input$slide_vpa < 0) {
-      fat_val <- -0.5
-    } else if (input$slide_lpa >= 5)  {
-      fat_val <- 0.5
-    } else if (input$slide_lpa <= -2)  {
-      fat_val <- -0.5
-    } else if (input$slide_sed >= 1)  {
-      fat_val <- -0.5
-    } else if (input$slide_sed <= -10) {
-      fat_val <- 0.5
-    } else {
-      fat_val <- 0
+    lst_obj <- get_curr_cmp_pred()
+    y_cur <- lst_obj$y_hat
+    contraint_strata <- lst_obj$strata_id
+    
+    m_v_lst_strata <- 
+      m_and_v_ilrs %>% 
+      dplyr::filter(strata_id == contraint_strata)
+    
+    feasible_cmp_cur <-
+      is_within_constraint(
+        mk_ilr(this_cmp_df[1, ]), 
+        m_v_lst_strata[["m"]][[1]],
+        m_v_lst_strata[["v"]][[1]],
+        max_p = 0.8
+      )
+    # is_within_constraint(rep(0, 3), rep(0, 3), diag(3))
+    
+    if (!feasible_cmp_cur) {
+      cat(
+        "NOTE the original composition is NOT within the feasible region!\n",
+        "(manually making y_current median of grid ests)\n"
+      )
+      #   print(as_tibble(out_df))
+      y_cur <- unname(quantile(grid_ys, 0.5))
     }
     
-    pm <-     ifelse(fat_val < 0,    "", ifelse(fat_val > 0,     "+",      "")) 
-    bx_col <- ifelse(fat_val < 0, "red", ifelse(fat_val > 0, "green", "black")) 
-    bx_img <- ifelse(fat_val < -0.25, "red.png", ifelse(fat_val > 0.25, "green.png", "orange.png")) 
+    delta_obj <- get_new_cmp_pred()
+    y_new  <- delta_obj$y_hat
+    delta_sum <- sum(delta_obj$delta)
+    new_cmp_df  <- delta_obj$cmp_df
     
-    if (abs(curr_realloc) > 1e-6) { # reallocations not 
+    feasible_cmp_new <-
+      is_within_constraint(
+        mk_ilr(new_cmp_df[1, ]), 
+        m_v_lst_strata[["m"]][[1]],
+        m_v_lst_strata[["v"]][[1]],
+        max_p = 0.8
+      )
+    # is_within_constraint(rep(0, 3), rep(0, 3), diag(3))
+    
+    if (!feasible_cmp_new) {
+      cat(
+        "NOTE the new/realloc composition is NOT within the feasible region!\n",
+        "(manually making y_new median of grid ests)\n"
+      )
+      #   print(as_tibble(out_df))
+      y_new <- unname(quantile(grid_ys, 0.5))
+    }
+    
+    
+    
+    print(c(y_cur = y_cur, y_new = y_new, y_opt = y_opt))
+    
+    ### intialise before if-else conditions
+    is_opt_largest <- (y_opt > y_cur)
+    is_good_delta <- is_opt_largest & check_good_delta(y_new, y_cur, y_opt)
+    is_bad_delta  <- is_opt_largest & check_bad_delta(y_new, y_cur, y_opt)
+
+    
+    # pm <-     ifelse(fat_val < 0,    "", ifelse(fat_val > 0,     "+",      "")) 
+    # bx_col <- ifelse(fat_val < 0, "red", ifelse(fat_val > 0, "green", "black")) 
+    bx_img <- ifelse(is_bad_delta, "red.png", ifelse(is_good_delta, "green.png", "orange.png")) 
+    
+    if (abs(delta_sum) > 1e-6) { # reallocations not sum to one
       bx_img <- "not0.png"
     }
     
