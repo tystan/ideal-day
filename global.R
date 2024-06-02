@@ -20,7 +20,50 @@ library("purrr")
 
 library("compositions")
 
+library("expm")
 
+# install.packages("mosaic")
+project_euclid <- mosaic::project
+dotprod_euclid <- mosaic::dot
+vlength_euclid <- mosaic::vlength
+cosangl_euclid <- function(u, v) {
+  dotprod_euclid(u, v) / (vlength_euclid(u) * vlength_euclid(v))
+}
+get_theta_degrees <- function(u, v) {
+  180 * acos(cosangl_euclid(u, v)) / pi
+}
+
+# x1 <- c(1,0,0); x2 <- c(1,2,3); y1 <- c(3,4,5);
+# vlength_euclid(x1)
+# vlength_euclid(x2)
+# vlength_euclid(y1)
+# dotprod_euclid(x1, x2)
+# dotprod_euclid(1 - x1, x2)
+# 
+# project_euclid(x1, x2, type='length')
+# project_euclid(x2, x1, type='length')
+# vlength_euclid(project_euclid(x1, x2))
+# cosangl_euclid(x1, x2)
+# cosangl_euclid(x1, -x1 + c(0, 1, 0))
+# cosangl_euclid(x1, x2)
+# cosangl_euclid(x2, x1)
+# project_euclid(x1, x2)
+# project_euclid(x2, x1)
+
+# cosangl_euclid(x1, -x1 - c(0, 0.5, -0.5))
+# get_theta_degrees(x1, -x1 - c(0, 0.5, -0.5))
+# cosangl_euclid(-x2, x1)
+# get_theta_degrees(-x2, x1)
+# cosangl_euclid(x2, x1)
+# get_theta_degrees(x2, x1)
+# cosangl_euclid(x2, -x1)
+# get_theta_degrees(x2, -x1)
+# cosangl_euclid(x1, x1)
+# get_theta_degrees(x1, x1)
+# cosangl_euclid(x2, y1)
+# get_theta_degrees(x2, y1)
+
+# cosangl_euclid(x1, c(0, 1, 0))
 
 use_plotly <- TRUE
 

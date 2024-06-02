@@ -538,6 +538,7 @@ server <- function(input, output, session) {
     grid_opt_obj <- get_opt_cmp_from_ui()
     grid_opt_df <- grid_opt_obj$opt_cmp
     grid_ys <- grid_opt_obj$y_dist
+    # x_opt <- 
     y_opt <- grid_opt_df[["y_hat"]]
     
     lst_obj <- get_curr_cmp_pred()
@@ -567,6 +568,7 @@ server <- function(input, output, session) {
     }
     
     delta_obj <- get_new_cmp_pred()
+    print(delta_obj)
     y_new  <- delta_obj$y_hat
     delta_sum <- sum(delta_obj$delta)
     new_cmp_df  <- delta_obj$cmp_df
@@ -589,15 +591,94 @@ server <- function(input, output, session) {
       y_new <- unname(quantile(grid_ys, 0.5))
     }
     
-    
+    x_cur <- this_cmp_df
+    x_new <- delta_obj$cmp_df
+    x_opt <- 60 * grid_opt_df[cmp_nms]
     
     print(c(y_cur = y_cur, y_new = y_new, y_opt = y_opt))
+    print(rbind(x_cur = x_cur, x_new = x_new, x_opt = x_opt))
+    
+    
+    z_cur <- mk_ilr(x_cur)
+    z_new <- mk_ilr(x_new)
+    z_opt <- mk_ilr(x_opt)
+    
+    print(z_cur)
+    print(z_new)
+    print(z_opt)
+    
+    z_propos <- z_new - z_cur
+    z_wanted <- z_opt - z_cur
+    
+    
+    z_propos <- unlist(z_propos)
+    z_wanted <- unlist(z_wanted)
+    ### testing
+    # unlist(data.frame(a=1,b=2,c=1))
+    # class(unlist(data.frame(a=1,b=2,c=1)))
+    
+    print(z_propos)
+    print(z_wanted)
+    print(class(z_propos))
+    print(class(z_wanted))
+    
+    
+    scalar_proj_val <- 
+      ifelse(
+        vlength_euclid(z_propos) < 1e-12,
+        0,
+        vlength_euclid(z_propos) * cosangl_euclid(z_propos,z_wanted)
+      )
+
+   print(scalar_proj_val)
+   
+   print(matrix(z_propos, nrow = 1))
+   print(matrix(z_wanted, nrow = 1))
+   print(class(matrix(z_propos, nrow = 1)))
+   print(class(matrix(z_propos, nrow = 1)[1,1]))
+   print(class(matrix(z_wanted, nrow = 1)))
+    
+    std_var_mat <- m_v_lst_strata[["v"]][[1]]
+    print(std_var_mat)
+    print(class(std_var_mat))
+    
+
+    std_var_mat_inv <- sqrtm(solve(std_var_mat))
+    print(std_var_mat_inv)
+    print(class(std_var_mat_inv))
+    
+    print(matrix(z_propos, nrow = 1))
+    print(std_var_mat_inv)
+    z_propos_std <- as.numeric(
+      matrix(z_propos, nrow = 1) %*% std_var_mat_inv
+    )
+    z_wanted_std <-  as.numeric(
+      matrix(z_wanted, nrow = 1) %*% std_var_mat_inv
+    )
+    
+   print(z_propos_std)
+   print(z_wanted_std)
+   
+    scalar_proj_val_std <- 
+      ifelse(
+        abs(scalar_proj_val) < 1e-12,
+        0,
+        vlength_euclid(z_propos_std) * 
+          cosangl_euclid(
+            z_propos_std,
+            z_wanted_std
+          )
+      )
+   
+   print(scalar_proj_val_std)
     
     ### intialise before if-else conditions
-    is_opt_largest <- (y_opt > y_cur)
-    is_good_delta <- is_opt_largest & check_good_delta(y_new, y_cur, y_opt)
-    is_bad_delta  <- is_opt_largest & check_bad_delta(y_new, y_cur, y_opt)
-
+    # is_opt_largest <- (y_opt > y_cur)
+    # is_good_delta <- is_opt_largest & check_good_delta(y_new, y_cur, y_opt)
+    # is_bad_delta  <- is_opt_largest & check_bad_delta(y_new, y_cur, y_opt)
+    is_magnitude <- (abs(scalar_proj_val_std) > 0.05)
+    is_good_delta <- is_magnitude & (scalar_proj_val_std > 0)
+    is_bad_delta  <- is_magnitude & (scalar_proj_val_std < 0)
     
     # pm <-     ifelse(fat_val < 0,    "", ifelse(fat_val > 0,     "+",      "")) 
     # bx_col <- ifelse(fat_val < 0, "red", ifelse(fat_val > 0, "green", "black")) 
