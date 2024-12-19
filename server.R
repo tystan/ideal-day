@@ -20,6 +20,11 @@ server <- function(input, output, session) {
     # print(input$demos_dep)
     # print(input$demos_t2d)
     
+    special_print_for_console(
+      "This is the current set of inputs from the user",
+      "(not the ilrs, those are default vals)"
+    )
+    
     mk_cov_df_from_ui(
       age = input$demos_age, 
       sex = input$demos_sex, 
@@ -32,13 +37,32 @@ server <- function(input, output, session) {
       binj = input$demos_cran, 
       hbp = input$demos_hyp, 
       dep = input$demos_dep, 
-      t2d = input$demos_t2d
+      t2d = input$demos_t2d,
+      verbose = TRUE
     )
   })  
     
+  get_cog_outc <- reactive({
+    this_outc <- input$cog_outc
+    
+    special_print_for_console(
+      "The current selected outcome is:"
+    )
+    print(this_outc)
+    
+    this_outc
+  }) 
   
   get_non_sit <- reactive({
-    input$tu_slp + input$tu_lpa + input$tu_vpa
+    
+    slp_lpa_vpa <- input$tu_slp + input$tu_lpa + input$tu_vpa
+    
+    special_print_for_console(
+      "The current sum of inputed current sleep + lpa + vpa is:"
+    )
+    print(slp_lpa_vpa)
+    
+    slp_lpa_vpa
   }) 
   
   observe({
@@ -46,11 +70,18 @@ server <- function(input, output, session) {
   }) 
   
   get_cur_day <- reactive({
-    data.frame(
+    cd_df <- data.frame(
       group = c("Sleep", "Light PA", "Sit", "Mod-vig PA"),
       value = c(input$tu_slp, input$tu_lpa, input$tu_sit, input$tu_vpa)
     )
-  })   
+    
+    special_print_for_console(
+      "The current time-use day inputted is:"
+    )
+    print(as_tibble(cd_df))
+    
+    cd_df
+  })  
   
   current_24_diff <- reactive({
     curr_sum <- sum(get_cur_day()$value)
@@ -171,14 +202,37 @@ server <- function(input, output, session) {
         a = this_cov_df[["age"]], 
         b = this_cov_df[["bmi"]]
       )[, cmp_nms]
-    print(this_strata_grid)
+    
+
+    # print(this_strata_grid)
     
     
     grid_predictor_df <- 
-      mk_predictor_df(cmp_df = this_strata_grid, cov_df = this_cov_df)
+      mk_predictor_df(
+        cmp_df = this_strata_grid, 
+        cov_df = this_cov_df
+      )
+    special_print_for_console(
+      paste0(
+        "These are the first 10 rows of (",
+        nrow(grid_predictor_df),
+        ") that are considered for optimisation"
+      ),
+      "(based on the stata's fenced grid)"
+    )
     print(as_tibble(grid_predictor_df))
+    
     # print(as_tibble(get_opt_cmp_from_preds(grid_predictor_df)))
-    grid_opt_obj <- get_opt_cmp_from_preds(grid_predictor_df)
+    grid_opt_obj <- 
+      get_opt_cmp_from_preds(
+        grid_predictor_df, 
+        which_outc = get_cog_outc()
+      ) 
+    special_print_for_console(
+      "From the optimisation procedure, this is the optimum composition and",
+      "corresponding predicted outcome:"
+    )
+    print(grid_opt_obj$opt_cmp)
     
     grid_opt_obj
     
@@ -187,20 +241,14 @@ server <- function(input, output, session) {
   get_curr_cmp_pred <- reactive({
     
     this_cov_df <- get_cov_from_ui()
-    print(
-      tibble(
-        s = this_cov_df[["sex"]], 
-        a = this_cov_df[["age"]], 
-        b = this_cov_df[["bmi"]]
-      )
-    )
+
     this_strata <- 
       get_strata_id(
         s = this_cov_df[["sex"]], 
         a = this_cov_df[["age"]], 
         b = this_cov_df[["bmi"]]
       )
-    print(this_strata)
+
       
     dat <- get_cur_day()
     # print(dat)
@@ -221,15 +269,26 @@ server <- function(input, output, session) {
         mvpa = dat[["value"]][row_v == "Mod-vig PA"]
         # strata_id = this_strata
       )
-    print(this_cmp_df)
+    # print(this_cmp_df)
     # print(class(this_cmp_df))
     # print(class(this_cov_df))
     # print(nrow(this_cmp_df))
     # print(nrow(this_cov_df))
-    
+    this_cog_outc <- get_cog_outc()
     this_predictor_df <- 
       mk_predictor_df(cmp_df = this_cmp_df, cov_df = this_cov_df)
-    this_predict <- mk_pred_over_ilrs(this_predictor_df)
+    this_predict <- 
+      mk_pred_over_ilrs(
+        this_predictor_df, 
+        which_outc = this_cog_outc
+      )
+    
+    special_print_for_console(
+      "This is the current day predicted outcome for",
+      this_cog_outc,
+      "is:"
+    )
+    print(this_predict)
     
     list(dat = dat, y_hat = this_predict, strata_id = this_strata)
     
@@ -241,8 +300,8 @@ server <- function(input, output, session) {
     grid_opt_df <- grid_opt_obj$opt_cmp
     grid_ys <- grid_opt_obj$y_dist
     
-    print(grid_opt_df)
-    print(grid_ys)
+
+    # print(grid_ys)
     
     lst_obj <- get_curr_cmp_pred()
     curr_pred <- lst_obj$y_hat
@@ -256,8 +315,8 @@ server <- function(input, output, session) {
         "Sit" = grid_opt_df[["sb"]], # / 60, 
         "Mod-vig PA" = grid_opt_df[["mvpa"]] # / 60, 
       )
-    print(dat)
-    print(ideal_day_calc)
+    # print(dat)
+    # print(ideal_day_calc)
     
     dat$ideal_day <- ideal_day_calc 
       
@@ -305,10 +364,15 @@ server <- function(input, output, session) {
      marker = list(color = "rgb(166, 166, 166)")
    )
 
+   outc_nm <- names(cog_outc_choices_alt)[cog_outc_choices_alt == get_cog_outc()]
    fig <- fig %>% 
      add_trace(
        y = ~ideal_day, 
-       name = "My 'ideal' day",
+       name = paste0(
+         "My 'ideal' day (", 
+         outc_nm,
+         ")"
+      ),
        marker = list(color = "rgb(0, 176, 240)")
       )
 
@@ -365,6 +429,13 @@ server <- function(input, output, session) {
     grid_opt_df <- grid_opt_obj$opt_cmp
     grid_ys <- grid_opt_obj$y_dist
     
+    # special_print_for_console(
+    #   "This is the optimum time-use and corresponding predicted",
+    #   "outcome for the current inputs:"
+    # )
+    # print(grid_opt_df)
+    # 
+    
     lst_obj <- get_curr_cmp_pred()
     curr_pred <- lst_obj$y_hat
     dat <- lst_obj$dat 
@@ -378,20 +449,22 @@ server <- function(input, output, session) {
         "Sit" = grid_opt_df[["sb"]], # / 60, 
         "Mod-vig PA" = grid_opt_df[["mvpa"]] # / 60, 
       )
-    print(dat)
-    print(ideal_day_calc)
+    # print(dat)
+    # print(ideal_day_calc)
     
     
     # "Sleep", "Light PA", "Sit", "Mod-vig PA"
-    print(ideal_day_calc)
+    # print(ideal_day_calc)
     curr_day <- dat$value
     names(curr_day) <- dat$group
-    print(curr_day)
+    # print(curr_day)
     change_req <- ideal_day_calc - curr_day
+    
+    outc_nm <- names(cog_outc_choices_alt)[cog_outc_choices_alt == get_cog_outc()]
     
     card(
       full_screen = TRUE,
-      card_header("Your current day vs. your 'ideal' day"),
+      card_header(paste0("Your current day vs. your 'ideal' day (", outc_nm, ")")),
       layout_columns(
         col_widths  = c(8, 4),
         box(width = 12,
@@ -406,7 +479,7 @@ server <- function(input, output, session) {
             p(
               strong("To reach your"), 
               strong("'ideal'", style = "color: #00b0f0"), 
-              strong("day, you should aim to change:"), 
+              strong(paste0("day (", outc_nm, "), you should aim to change:")), 
               style = "text-align: center; color: #000000"
             ),
             p(),    
@@ -489,8 +562,8 @@ server <- function(input, output, session) {
     
     realloc_delta <- get_realloc_cmp()
 
-    print(orig_alloc)
-    print(realloc_delta)
+    # print(orig_alloc)
+    # print(realloc_delta)
     
     realloc_cmp_df <- 
       mk_cmp_df_from_ui(
@@ -499,11 +572,32 @@ server <- function(input, output, session) {
         lpa = orig_alloc["lpa"] + realloc_delta["lpa"], 
         mvpa = orig_alloc["mvpa"] + realloc_delta["mvpa"], 
       )
+    
+    special_print_for_console(
+      "This is the new reallocated time-use day set of predictors:"
+    )
+    print(realloc_cmp_df)
 
+    this_cog_outc <- get_cog_outc()
     
     realloc_predictor_df <- 
-      mk_predictor_df(cmp_df = realloc_cmp_df, cov_df = this_cov_df)
-    realloc_predict <- mk_pred_over_ilrs(realloc_predictor_df)
+      mk_predictor_df(
+        cmp_df = realloc_cmp_df, 
+        cov_df = this_cov_df
+      )
+    
+    realloc_predict <- 
+      mk_pred_over_ilrs(
+        realloc_predictor_df,
+        which_outc = this_cog_outc
+      )
+    
+    special_print_for_console(
+      "This is the new reallocated time-use day predicted outcome for",
+      this_cog_outc,
+      "is:"
+    )
+    print(realloc_predict)
     
     list(delta = realloc_delta, y_hat = realloc_predict, cmp_df = realloc_cmp_df)
     
@@ -549,43 +643,61 @@ server <- function(input, output, session) {
       m_and_v_ilrs %>% 
       dplyr::filter(strata_id == contraint_strata)
     
-    feasible_cmp_cur <-
-      is_within_constraint(
+    
+    contour_cmp_cur <- 
+      get_countour_propn(
         mk_ilr(this_cmp_df[1, ]), 
         m_v_lst_strata[["m"]][[1]],
-        m_v_lst_strata[["v"]][[1]],
-        max_p = 0.8
+        m_v_lst_strata[["v"]][[1]]
       )
+    feasible_cmp_cur <- 
+      (contour_cmp_cur <= 0.8)
+      
     # is_within_constraint(rep(0, 3), rep(0, 3), diag(3))
     
+    special_print_for_console(sprintf(
+      "The original composition is estimated to be at the %1.3fth quantile contour", 
+      contour_cmp_cur
+    ))
+    
     if (!feasible_cmp_cur) {
-      cat(
-        "NOTE the original composition is NOT within the feasible region!\n",
-        "(manually making y_current median of grid ests)\n"
+      special_print_for_console(
+        "NOTE the original composition is NOT within the feasible region!"
+        # "(manually making y_current median of grid ests)\n"
       )
       #   print(as_tibble(out_df))
       y_cur <- unname(quantile(grid_ys, 0.5))
     }
     
     delta_obj <- get_new_cmp_pred()
+    
+    special_print_for_console("The current change in time-use is:")
     print(delta_obj)
+    
     y_new  <- delta_obj$y_hat
     delta_sum <- sum(delta_obj$delta)
     new_cmp_df  <- delta_obj$cmp_df
     
-    feasible_cmp_new <-
-      is_within_constraint(
-        mk_ilr(new_cmp_df[1, ]), 
+    
+    contour_cmp_new <- 
+      get_countour_propn(
+        mk_ilr(new_cmp_df[1, ]),
         m_v_lst_strata[["m"]][[1]],
-        m_v_lst_strata[["v"]][[1]],
-        max_p = 0.8
+        m_v_lst_strata[["v"]][[1]]
       )
+    feasible_cmp_new <- 
+      (contour_cmp_new <= 0.8)
+    
+    special_print_for_console(sprintf(
+      "The new/realloc composition is estimated to be at the %1.3fth quantile contour", 
+      contour_cmp_new
+    ))
     # is_within_constraint(rep(0, 3), rep(0, 3), diag(3))
     
     if (!feasible_cmp_new) {
-      cat(
-        "NOTE the new/realloc composition is NOT within the feasible region!\n",
-        "(manually making y_new median of grid ests)\n"
+      special_print_for_console(
+        "NOTE the new/realloc composition is NOT within the feasible region!"
+        # "(manually making y_new median of grid ests)\n"
       )
       #   print(as_tibble(out_df))
       y_new <- unname(quantile(grid_ys, 0.5))
@@ -595,7 +707,14 @@ server <- function(input, output, session) {
     x_new <- delta_obj$cmp_df
     x_opt <- 60 * grid_opt_df[cmp_nms]
     
+    special_print_for_console(
+      "These are the predicted outcome values for the (current, new, optimal) predictions"
+    )
     print(c(y_cur = y_cur, y_new = y_new, y_opt = y_opt))
+    
+    special_print_for_console(
+      "These are the (current, new, optimal) time-use compositions"
+    )
     print(rbind(x_cur = x_cur, x_new = x_new, x_opt = x_opt))
     
     
@@ -603,9 +722,10 @@ server <- function(input, output, session) {
     z_new <- mk_ilr(x_new)
     z_opt <- mk_ilr(x_opt)
     
-    print(z_cur)
-    print(z_new)
-    print(z_opt)
+    special_print_for_console(
+      "These are the corresponding (current, new, optimal) ilrs"
+    )
+    print(rbind(z_cur = z_cur, z_new = z_new, z_opt = z_opt))
     
     z_propos <- z_new - z_cur
     z_wanted <- z_opt - z_cur
@@ -617,38 +737,49 @@ server <- function(input, output, session) {
     # unlist(data.frame(a=1,b=2,c=1))
     # class(unlist(data.frame(a=1,b=2,c=1)))
     
-    print(z_propos)
-    print(z_wanted)
-    print(class(z_propos))
-    print(class(z_wanted))
+    special_print_for_console(
+      "These are the proposed (new - cur) and wanted (optimal - cur) vectors [in the ilr-space]"
+    )
+    print(rbind(z_propos = z_propos, z_wanted = z_wanted))
+
+    # print(class(z_propos))
+    # print(class(z_wanted))
     
     
     scalar_proj_val <- 
       ifelse(
-        vlength_euclid(z_propos) < 1e-12,
+        vlength_euclid(z_propos) < effective_zero,
         0,
         vlength_euclid(z_propos) * cosangl_euclid(z_propos,z_wanted)
       )
-
-   print(scalar_proj_val)
+    special_print_for_console(
+      "This is the scalar projected value of [z_propos] onto [z_wanted]",
+      "It can be thought of as the length the vector [z_propos] sits ontop of [z_wanted]",
+      "Larger positive values mean [z_propos] and [z_wanted] are more similar (angle < 90 deg)",
+      "0 means [z_propos] is a 0 vector or orthogonal (angle ==90 deg) to [z_wanted] ",
+      "Larger negative values mean [z_propos] and [z_wanted] point in different directions (angle > 90 deg)"
+    )
+    print(scalar_proj_val)
    
-   print(matrix(z_propos, nrow = 1))
-   print(matrix(z_wanted, nrow = 1))
-   print(class(matrix(z_propos, nrow = 1)))
-   print(class(matrix(z_propos, nrow = 1)[1,1]))
-   print(class(matrix(z_wanted, nrow = 1)))
-    
+    special_print_for_console(
+      "This is the covariance matrix in the ilr space (specific to each strata A to H)",
+        "The (matrix squareroot) inverse of this covariance matrix is used to standardise changes",
+        "in the three ilr axis directions based on both the sample standard deviations in the",
+        "time-use compositions (ilrs) and their covariance/correlations!",
+      "For example MVPA is generally less variable so even small changes in this should be weighted",
+      "more than small changes in sleep or sedentarry behaviour for example"
+    )
     std_var_mat <- m_v_lst_strata[["v"]][[1]]
     print(std_var_mat)
-    print(class(std_var_mat))
-    
+    # print(class(std_var_mat))
+
 
     std_var_mat_inv <- sqrtm(solve(std_var_mat))
-    print(std_var_mat_inv)
-    print(class(std_var_mat_inv))
+    # print(std_var_mat_inv)
+    # print(class(std_var_mat_inv))
     
-    print(matrix(z_propos, nrow = 1))
-    print(std_var_mat_inv)
+    # print(matrix(z_propos, nrow = 1))
+    # print(std_var_mat_inv)
     z_propos_std <- as.numeric(
       matrix(z_propos, nrow = 1) %*% std_var_mat_inv
     )
@@ -656,12 +787,18 @@ server <- function(input, output, session) {
       matrix(z_wanted, nrow = 1) %*% std_var_mat_inv
     )
     
-   print(z_propos_std)
-   print(z_wanted_std)
+    special_print_for_console(
+      "These are the standardised proposed and wanted vectors ([z_propos_std] and [z_wanted_std])",
+      "using the sample covariance to standardise their differences from the origin (0 vector)",
+      "i.e., [z_propos_std] = t([z_propos]) %*% Sigma^(-1/2)"
+    )
+    print(rbind(z_propos_std = z_propos_std, z_wanted_std = z_wanted_std))
+   # print(z_propos_std)
+   # print(z_wanted_std)
    
     scalar_proj_val_std <- 
       ifelse(
-        abs(scalar_proj_val) < 1e-12,
+        abs(scalar_proj_val) < effective_zero,
         0,
         vlength_euclid(z_propos_std) * 
           cosangl_euclid(
@@ -669,7 +806,13 @@ server <- function(input, output, session) {
             z_wanted_std
           )
       )
-   
+    
+    special_print_for_console(
+      "This is the scalar projected value of the sample covariance standardised [z_propos_std] onto [z_wanted_std]",
+      "This is a better measure of the relative length the vector [z_propos] sits ontop of [z_wanted] when",
+      "importantly considering the sample covariance to up-weight hard time-use changes or down-weight easier time-use changes",
+      "NB: currently this value needs to be greater than 0.05 or less than -0.05 to invoke a change from orange light to green or red, respectively."
+    )
    print(scalar_proj_val_std)
     
     ### intialise before if-else conditions
@@ -694,9 +837,10 @@ server <- function(input, output, session) {
     #   width = 12, 
     #   color = bx_col
     # )
+    outc_nm <- names(cog_outc_choices_alt)[cog_outc_choices_alt == get_cog_outc()]
     box(
       width = 12,
-      p(strong("Predicted change in cognitive function"), style = "text-align: center;"),
+      p(strong(paste0("Predicted change in ", outc_nm)), style = "text-align: center;"),
       # p("Current status is: ", icon("ok", lib = "glyphicon")),
       # p("Current status is: ", icon("snowplow", lib = "font-awesome"))
       div(img(src = bx_img, height = 300 * 927 / 820, width = 300), style = "text-align: center;")

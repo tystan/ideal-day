@@ -67,6 +67,7 @@ get_theta_degrees <- function(u, v) {
 
 use_plotly <- TRUE
 
+effective_zero <- 1e-12
 
 
 # ---- data ----
@@ -115,9 +116,11 @@ psi4 <- compositions::gsi.buildilrBase(sbp4)
 
 default_covs_df <- read_rds(file = "dat/default_covs.rds")
 mod_form_cplx   <- read_rds(file = "dat/mod_form_cplx.rds")
-cols_rm_names   <- read_rds(file = "dat/cols_rm_names.rds")
+x_dsgn_meta     <- read_rds(file = "dat/x_dsgn_meta.rds")
+cols_rm_names   <- x_dsgn_meta$var_and_lvl[x_dsgn_meta$col_inc == 0L]
+(cols_rm_names  <- cols_rm_names[!(cols_rm_names %in% "(Intercept)")]) # intercept should stay
 xlvl_lst        <- read_rds(file = "dat/xlvl_lst.rds")
-best_mod_coefs  <- read_rds(file = "dat/best_mod_coefs.rds")
+best_mod_coefs  <- read_rds(file = "dat/beta_lasso_mat.rds")
 in_contour_grid <- read_rds(file = "dat/grid_in_contours.rds")
 m_and_v_ilrs    <- read_rds(file = "dat/m_and_v_ilrs.rds")
 
@@ -177,6 +180,12 @@ get_strata_id <- function(s, a, b) {
 get_strata_grid <- function(s, a, b) {
   
   wch_strata <- get_strata_id(s = s, a = a, b = b)
+  
+  special_print_for_console(
+    "The corresponding strata ID (A to H) based on the input\n",
+    paste0("(sex, age, bmi) = ", sprintf("(%s, %2.1f, %2.1f)", s, a, b)," is:")
+  )
+  print(wch_strata)
   
   in_contour_grid %>% 
     dplyr::filter(strata_id == wch_strata)
@@ -304,24 +313,28 @@ mk_predictor_df <- function(cmp_df, cov_df = default_covs_df) {
 # test_cmp <- in_contour_grid[1:20, cmp_nms[4:1]]
 # mk_predictor_df(test_cmp)
 
-mk_pred_over_ilrs <- function(predictor_df) {
-
+mk_pred_over_ilrs <- function(predictor_df, which_outc = "globalcog") {
+  
+  out_pred <-
     get_pred_w_ref_lvls(
-      best_mod_coefs,
-      mod_form_cplx, 
       predictor_df, 
+      mod_form_cplx, 
+      beta_mat = best_mod_coefs,
       lvls = xlvl_lst, 
       frm_rm_terms = cols_rm_names
-    )
+    )[, which_outc]
+  
+  
+  return(out_pred)
   
   
 }
 # test_cmp <- in_contour_grid[1:20, cmp_nms[4:1]]
 # mk_pred_over_ilrs(mk_predictor_df(test_cmp))
 
-get_opt_cmp_from_preds <- function(predictor_df, propn = 0.05) {
+get_opt_cmp_from_preds <- function(predictor_df, propn = 0.05, which_outc = "globalcog") {
   
-  y_hat <- mk_pred_over_ilrs(predictor_df) 
+  y_hat <- mk_pred_over_ilrs(predictor_df, which_outc = which_outc) 
   
   tmp_opt <-
     predictor_df$ilr %>%
@@ -329,7 +342,7 @@ get_opt_cmp_from_preds <- function(predictor_df, propn = 0.05) {
     arrange(desc(y_hat)) %>%
     dplyr::filter(row_number() < (propn * n()))
   
-  print(tmp_opt)
+  # print(tmp_opt)
   
   y_hat_quant <- 
     tmp_opt %>% 
@@ -337,19 +350,32 @@ get_opt_cmp_from_preds <- function(predictor_df, propn = 0.05) {
     quantile(., 0.5) %>% 
     unname(.)
   
+  perc_str <- sprintf("%2.1f%%", 100 * propn)
+  special_print_for_console(
+    "'y_hat_quant' below is the _median_ predicted outcome from the top", 
+    paste(perc_str, "of predicted values in the strata defined time-use fencing")
+  )
+  print(c(y_hat_quant = y_hat_quant))
+  
   tmp_opt <- 
     tmp_opt %>% 
     summarise(across(everything(), mean))
   
-  
-  print(tmp_opt)
-  print(c(y_hat_quant = y_hat_quant, y_hat_ave = tmp_opt[["y_hat"]]))
+  special_print_for_console(
+    "'y_hat_ave' below is the _mean_ predicted outcome from the top", 
+    paste(perc_str, "of predicted values in the strata defined time-use fencing")
+  )
+  print(c(y_hat_ave = tmp_opt[["y_hat"]]))
   
   tmp_opt <- 
     tmp_opt %>%
     select(all_of(ilr_nms)) %>%
     mk_comp(.) 
   
+  special_print_for_console(
+    "The below is the _compositional mean_ of time-use compositions corresponding to the top",
+    paste(perc_str, "of predicted values in the strata defined time-use fencing")
+  )
   print(tmp_opt)
   
   tmp_opt <- 
@@ -422,6 +448,11 @@ mk_cmp_df_from_ui <- function(sleep, sb, lpa, mvpa, strata_id = NULL) {
   #   ))
   # 
   # }
+  special_print_for_console(
+    "This is the current time use combination being used for current day prediction:"
+  )
+  print(out_df)
+  
   
   return(out_df)
   
@@ -457,14 +488,20 @@ h_to_hm <- function(hours_decimal) {
 }
 
 
-
-cog_outc_choices <- c(
+cog_outc_choices <- colnames(best_mod_coefs)
+names(cog_outc_choices) <- c(
   "Global cognition (my overall cognitive function)",
   "Memory",
-  "Reasoning",
   "Processing speed",
-  "Executive function"
+  "Executive function",
+  "Reasoning"
 )
+cog_outc_choices
+
+cog_outc_choices_alt <- cog_outc_choices
+names(cog_outc_choices_alt) <- gsub(" \\(.*\\)", "", names(cog_outc_choices_alt))
+cog_outc_choices_alt
+
 
 # demos_age_choices <- paste(c(
 #   # "<=45",
@@ -547,8 +584,20 @@ demos_smok_choices <- c(
 # ---- funcs ----
 
 
+special_print_for_console <- function(...) {
+  cat("\n\n#####################################\n")
+  cat(paste("###", paste(c(...), collapse = "\n### ")), sep = "")
+  cat("\n#####################################\n\n")
+}
+# special_print_for_console("dfgth", "dfghsfgdh", "Ddfgdfg")
+
+
+get_countour_propn <- function(z, m_z, v_z) {
+  pchisq(q = mahalanobis(z, m_z, v_z), df = length(z))
+}
+
 is_within_constraint <- function(z, m_z, v_z, max_p = 0.8) {
-  pchisq(q = mahalanobis(z, m_z, v_z), df = length(z)) <= max_p
+  get_countour_propn(z, m_z, v_z) <= max_p
 }
 # is_within_constraint(rep(0, 3), rep(0, 3), diag(3))
 # is_within_constraint(rep(1, 3), rep(0, 3), diag(3))
@@ -654,48 +703,88 @@ poly2 <- function(x, just_names = FALSE) {
 }
 
 
-
-get_linearalg_pred_dat <- function(mod_coefs, frm, df_dat, frm_rm_terms = NULL) {
+get_linearalg_pred_dat <- function(df_dat, frm, beta_mat = beta_lasso_mat, frm_rm_terms = NULL) {
   
   x_0 <- model.matrix(delete.response(terms(frm)), data = df_dat)
   
   if (!is.null(frm_rm_terms)) {
     x_0 <- x_0[, !(colnames(x_0) %in% frm_rm_terms), drop = FALSE]
   }
-  # Remove intercept term
-  # if (colnames(x_0)[1] == "(Intercept)") {
-  if (sum(colnames(x_0) %in% "(Intercept)") > 0) { # more general
-    x_0 <- x_0[, !(colnames(x_0) %in% "(Intercept)"), drop = FALSE]
+  
+  # frm_rm_terms_beta <- frm_rm_terms[!(frm_rm_terms == "(Intercept)")]
+  # beta_extras <- rownames(beta_mat) %in% frm_rm_terms_beta
+  # if (sum(beta_extras) > 0) {
+  #   beta_mat <- beta_mat[!beta_extras, , drop = FALSE]
+  # }
+  
+  # Add back intercept term if deleted above
+  if (sum(colnames(x_0) %in% "(Intercept)") < effective_zero) { # more general
+    x_0 <- cbind("(Intercept)" = 1, x_0)
   }
   
-  if (!("matrix" %in% class(mod_coefs)) | (ncol(mod_coefs) != 1) | (is.null(rownames(mod_coefs)))) {
-    stop("mod_coefs needs to be a 1-column, row-named matrix. Please format accordingly.")
-  }
-  # lasso_beta <- as.matrix(coef(mod)) # previously mod was the input not the coefs
-  lasso_beta <- mod_coefs
-  b0 <- lasso_beta["(Intercept)", ]
-  lasso_beta <- lasso_beta[!(rownames(lasso_beta) %in% "(Intercept)"), , drop = FALSE]
-  
-  if (ncol(x_0) != nrow(lasso_beta)) {
+  if (ncol(x_0) != nrow(beta_mat)) {
     message("Number of columns in design matrix is not the same as the number of rows in beta")
-    print(paste(ncol(x_0), "!=", nrow(lasso_beta)))
+    print(paste(ncol(x_0), "!=", nrow(beta_mat)))
     stop("exiting calc because of incombatable X and beta matrices")
-  } else if (any(colnames(x_0) != rownames(lasso_beta))) {
+  } else if (any(colnames(x_0) != rownames(beta_mat))) {
     message("columns names of design matrix and model betas do not have the same names")
     print(kable(cbind.data.frame(
       column_no = 1:ncol(x_0),
       designmat_cns = colnames(x_0), 
-      beta_rms = rownames(lasso_beta)
-    )[colnames(x_0) != rownames(lasso_beta), , drop = FALSE])) 
+      beta_rms = rownames(beta_mat)
+    )[colnames(x_0) != rownames(beta_mat), , drop = FALSE])) 
     stop("exiting calc because of incombatable coefficient names")
   }
   
-  pfit_linearalg <- b0 + x_0 %*% lasso_beta
-  pfit_linearalg <- pfit_linearalg[1:nrow(df_dat), ]
+  pfit_linearalg <- x_0 %*% beta_mat
+  ### keep as matrix
+  # pfit_linearalg <- pfit_linearalg[1:nrow(df_dat), ]
   
-  return(pfit_linearalg)
+  return(pfit_linearalg) # note this is a matrix now, not a numeric vector
   
 }
+### OLD
+# get_linearalg_pred_dat <- function(mod_coefs, frm, df_dat, frm_rm_terms = NULL) {
+#   
+#   x_0 <- model.matrix(delete.response(terms(frm)), data = df_dat)
+#   
+#   if (!is.null(frm_rm_terms)) {
+#     x_0 <- x_0[, !(colnames(x_0) %in% frm_rm_terms), drop = FALSE]
+#   }
+#   # Remove intercept term
+#   # if (colnames(x_0)[1] == "(Intercept)") {
+#   if (sum(colnames(x_0) %in% "(Intercept)") > 0) { # more general
+#     x_0 <- x_0[, !(colnames(x_0) %in% "(Intercept)"), drop = FALSE]
+#   }
+#   
+#   if (!("matrix" %in% class(mod_coefs)) | (ncol(mod_coefs) != 1) | (is.null(rownames(mod_coefs)))) {
+#     stop("mod_coefs needs to be a 1-column, row-named matrix. Please format accordingly.")
+#   }
+#   # lasso_beta <- as.matrix(coef(mod)) # previously mod was the input not the coefs
+#   lasso_beta <- mod_coefs
+#   b0 <- lasso_beta["(Intercept)", ]
+#   lasso_beta <- lasso_beta[!(rownames(lasso_beta) %in% "(Intercept)"), , drop = FALSE]
+#   
+#   if (ncol(x_0) != nrow(lasso_beta)) {
+#     message("Number of columns in design matrix is not the same as the number of rows in beta")
+#     print(paste(ncol(x_0), "!=", nrow(lasso_beta)))
+#     stop("exiting calc because of incombatable X and beta matrices")
+#   } else if (any(colnames(x_0) != rownames(lasso_beta))) {
+#     message("columns names of design matrix and model betas do not have the same names")
+#     print(kable(cbind.data.frame(
+#       column_no = 1:ncol(x_0),
+#       designmat_cns = colnames(x_0), 
+#       beta_rms = rownames(lasso_beta)
+#     )[colnames(x_0) != rownames(lasso_beta), , drop = FALSE])) 
+#     stop("exiting calc because of incombatable coefficient names")
+#   }
+#   
+#   pfit_linearalg <- b0 + x_0 %*% lasso_beta
+#   pfit_linearalg <- pfit_linearalg[1:nrow(df_dat), ]
+#   
+#   return(pfit_linearalg)
+#   
+# }
 
 
 incorperate_xlev_in_df <- function(df_dat, lvls) {
@@ -730,11 +819,16 @@ incorperate_xlev_in_df <- function(df_dat, lvls) {
   return(df_dat_fctised)
 }
 
-get_pred_w_ref_lvls <- function(mod_coefs, frm, df_dat, lvls, frm_rm_terms = NULL) {
-  df_dat <- incorperate_xlev_in_df(df_dat, lvls)
-  return(get_linearalg_pred_dat(mod_coefs, frm, df_dat, frm_rm_terms = frm_rm_terms))
-}
 
+### old
+# get_pred_w_ref_lvls <- function(mod_coefs, frm, df_dat, lvls, frm_rm_terms = NULL) {
+#   df_dat <- incorperate_xlev_in_df(df_dat, lvls)
+#   return(get_linearalg_pred_dat(mod_coefs, frm, df_dat, frm_rm_terms = frm_rm_terms))
+# }
+get_pred_w_ref_lvls <- function(df_dat, frm, beta_mat = beta_lasso_mat, frm_rm_terms = NULL, lvls = xlvl_lst) {
+  df_dat <- incorperate_xlev_in_df(df_dat, lvls)
+  return(get_linearalg_pred_dat(df_dat, frm, beta_mat = beta_mat, frm_rm_terms = frm_rm_terms))
+}
 
 
 
