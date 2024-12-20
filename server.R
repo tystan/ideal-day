@@ -841,10 +841,10 @@ server <- function(input, output, session) {
        0, 
        scalar_proj_val_std / vlength_euclid(z_wanted_std)
      )
-   cat(paste0("[z_wanted_std] = c(", paste(round(z_wanted_std, 4), collapse = ", "),")\n\n"))
-   cat(paste0("proj_[z_wanted_std]([z_propos_std]) = c(", paste(round(proj_vec, 4), collapse = ", "),")\n\n"))
    ### redundant
    # print(paste("length(proj_[z_wanted_std]([z_propos_std])) =", vlength_euclid(scalar_proj_val_std * z_wanted_std / vlength_euclid(z_wanted_std))))
+   cat(paste0("[z_wanted_std] = c(", paste(round(z_wanted_std, 4), collapse = ", "),")\n\n"))
+   cat(paste0("proj_[z_wanted_std]([z_propos_std]) = c(", paste(round(proj_vec, 4), collapse = ", "),")\n\n"))
    cat(paste("scalar projected value = length(proj_[z_wanted_std]([z_propos_std])) =", scalar_proj_val_std, "\n\n"))
    cat(paste("length([z_wanted_std]) =", vlength_euclid(z_wanted_std), "\n\n"))
    cat(paste("length(proj_[z_wanted_std]([z_propos_std])) / length([z_wanted_std]) =", ratio_of_wanted, "\n\n"))
