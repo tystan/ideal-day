@@ -218,7 +218,7 @@ server <- function(input, output, session) {
         nrow(grid_predictor_df),
         ") that are considered for optimisation"
       ),
-      "(based on the stata's fenced grid)"
+      "(based on the strata's fenced grid)"
     )
     print(as_tibble(grid_predictor_df))
     
@@ -283,11 +283,11 @@ server <- function(input, output, session) {
         which_outc = this_cog_outc
       )
     
-    special_print_for_console(
+    special_print_for_console(paste(
       "This is the current day predicted outcome for",
       this_cog_outc,
       "is:"
-    )
+    ))
     print(this_predict)
     
     list(dat = dat, y_hat = this_predict, strata_id = this_strata)
@@ -592,11 +592,11 @@ server <- function(input, output, session) {
         which_outc = this_cog_outc
       )
     
-    special_print_for_console(
-      "This is the new reallocated time-use day predicted outcome for",
-      this_cog_outc,
-      "is:"
-    )
+    special_print_for_console(paste0(
+      "This is the new reallocated time-use day predicted outcome for ",
+      this_cog_outc, 
+      ":"
+    ))
     print(realloc_predict)
     
     list(delta = realloc_delta, y_hat = realloc_predict, cmp_df = realloc_cmp_df)
@@ -655,14 +655,17 @@ server <- function(input, output, session) {
       
     # is_within_constraint(rep(0, 3), rep(0, 3), diag(3))
     
-    special_print_for_console(sprintf(
-      "The original composition is estimated to be at the %1.3fth quantile contour", 
-      contour_cmp_cur
-    ))
+    special_print_for_console(
+      "The original composition has the estimated quantile contour from the mean:"
+    )
+    cat(sprintf("%1.3f", contour_cmp_cur))
     
     if (!feasible_cmp_cur) {
       special_print_for_console(
-        "NOTE the original composition is NOT within the feasible region!"
+        "NOTE the original composition is NOT within the feasible region!",
+        "NB: therefore calculating y_cur is extrapolating beyond the highest density",
+        "of the sample data so we will set y_cur to the median of all the fenced time-use grid",
+        "predictions as a default but is not used in any calculations from here"
         # "(manually making y_current median of grid ests)\n"
       )
       #   print(as_tibble(out_df))
@@ -672,7 +675,7 @@ server <- function(input, output, session) {
     delta_obj <- get_new_cmp_pred()
     
     special_print_for_console("The current change in time-use is:")
-    print(delta_obj)
+    print(delta_obj[1]) # $delta
     
     y_new  <- delta_obj$y_hat
     delta_sum <- sum(delta_obj$delta)
@@ -688,15 +691,18 @@ server <- function(input, output, session) {
     feasible_cmp_new <- 
       (contour_cmp_new <= 0.8)
     
-    special_print_for_console(sprintf(
-      "The new/realloc composition is estimated to be at the %1.3fth quantile contour", 
-      contour_cmp_new
-    ))
+    special_print_for_console(
+      "The new/realloc composition is estimated to be at quantile contour from the mean:"
+    )
+    cat(sprintf("%1.3f", contour_cmp_new))
     # is_within_constraint(rep(0, 3), rep(0, 3), diag(3))
     
     if (!feasible_cmp_new) {
       special_print_for_console(
-        "NOTE the new/realloc composition is NOT within the feasible region!"
+        "NOTE the new/realloc composition is NOT within the feasible region!",
+        "NB: therefore calculating y_new is extrapolating beyond the highest density",
+        "of the sample data so we will set y_new to the median of all the fenced time-use grid",
+        "predictions as a default but is not used in any calculations from here"
         # "(manually making y_new median of grid ests)\n"
       )
       #   print(as_tibble(out_df))
@@ -708,7 +714,9 @@ server <- function(input, output, session) {
     x_opt <- 60 * grid_opt_df[cmp_nms]
     
     special_print_for_console(
-      "These are the predicted outcome values for the (current, new, optimal) predictions"
+      "These are the predicted outcome values for the (current, new, optimal) predictions",
+      "NB: y_cur and/or y_new may be the same value (median of all the fenced time-use grid preds)",
+      "when the cur and new compositions/ilrs are outside the feasible contours/time-use grid for the strata"
     )
     print(c(y_cur = y_cur, y_new = y_new, y_opt = y_opt))
     
@@ -815,6 +823,33 @@ server <- function(input, output, session) {
     )
    print(scalar_proj_val_std)
     
+   
+   special_print_for_console(
+     "And this is the ratio of the scalar projected value and the length sample covariance standardised [z_wanted_std].",
+     "i.e., length(projection of [z_propos_std] ON [z_wanted_std]) / length([z_wanted_std]).",
+     "This value represents the amount/proportion of the [z_wanted_std] vector covered by [z_propos_std]."
+   )
+   proj_vec <- 
+     if (abs(vlength_euclid(z_wanted_std)) < effective_zero) {
+       rep(0, 3)
+     } else {
+       scalar_proj_val_std * z_wanted_std / vlength_euclid(z_wanted_std)
+     }
+   ratio_of_wanted <- 
+     ifelse(
+       abs(vlength_euclid(z_wanted_std)) < effective_zero, 
+       0, 
+       scalar_proj_val_std / vlength_euclid(z_wanted_std)
+     )
+   cat(paste0("[z_wanted_std] = c(", paste(round(z_wanted_std, 4), collapse = ", "),")\n\n"))
+   cat(paste0("proj_[z_wanted_std]([z_propos_std]) = c(", paste(round(proj_vec, 4), collapse = ", "),")\n\n"))
+   ### redundant
+   # print(paste("length(proj_[z_wanted_std]([z_propos_std])) =", vlength_euclid(scalar_proj_val_std * z_wanted_std / vlength_euclid(z_wanted_std))))
+   cat(paste("scalar projected value = length(proj_[z_wanted_std]([z_propos_std])) =", scalar_proj_val_std, "\n\n"))
+   cat(paste("length([z_wanted_std]) =", vlength_euclid(z_wanted_std), "\n\n"))
+   cat(paste("length(proj_[z_wanted_std]([z_propos_std])) / length([z_wanted_std]) =", ratio_of_wanted, "\n\n"))
+
+   
     ### intialise before if-else conditions
     # is_opt_largest <- (y_opt > y_cur)
     # is_good_delta <- is_opt_largest & check_good_delta(y_new, y_cur, y_opt)

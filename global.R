@@ -182,7 +182,7 @@ get_strata_grid <- function(s, a, b) {
   wch_strata <- get_strata_id(s = s, a = a, b = b)
   
   special_print_for_console(
-    "The corresponding strata ID (A to H) based on the input\n",
+    "The corresponding strata ID (A to H) based on the input",
     paste0("(sex, age, bmi) = ", sprintf("(%s, %2.1f, %2.1f)", s, a, b)," is:")
   )
   print(wch_strata)
@@ -448,10 +448,11 @@ mk_cmp_df_from_ui <- function(sleep, sb, lpa, mvpa, strata_id = NULL) {
   #   ))
   # 
   # }
-  special_print_for_console(
-    "This is the current time use combination being used for current day prediction:"
-  )
-  print(out_df)
+  ### can't use below as this function is used for other quantities than "current"
+  # special_print_for_console(
+  #   "This is the current time use combination being used for current day prediction:"
+  # )
+  # print(out_df)
   
   
   return(out_df)
@@ -743,48 +744,7 @@ get_linearalg_pred_dat <- function(df_dat, frm, beta_mat = beta_lasso_mat, frm_r
   return(pfit_linearalg) # note this is a matrix now, not a numeric vector
   
 }
-### OLD
-# get_linearalg_pred_dat <- function(mod_coefs, frm, df_dat, frm_rm_terms = NULL) {
-#   
-#   x_0 <- model.matrix(delete.response(terms(frm)), data = df_dat)
-#   
-#   if (!is.null(frm_rm_terms)) {
-#     x_0 <- x_0[, !(colnames(x_0) %in% frm_rm_terms), drop = FALSE]
-#   }
-#   # Remove intercept term
-#   # if (colnames(x_0)[1] == "(Intercept)") {
-#   if (sum(colnames(x_0) %in% "(Intercept)") > 0) { # more general
-#     x_0 <- x_0[, !(colnames(x_0) %in% "(Intercept)"), drop = FALSE]
-#   }
-#   
-#   if (!("matrix" %in% class(mod_coefs)) | (ncol(mod_coefs) != 1) | (is.null(rownames(mod_coefs)))) {
-#     stop("mod_coefs needs to be a 1-column, row-named matrix. Please format accordingly.")
-#   }
-#   # lasso_beta <- as.matrix(coef(mod)) # previously mod was the input not the coefs
-#   lasso_beta <- mod_coefs
-#   b0 <- lasso_beta["(Intercept)", ]
-#   lasso_beta <- lasso_beta[!(rownames(lasso_beta) %in% "(Intercept)"), , drop = FALSE]
-#   
-#   if (ncol(x_0) != nrow(lasso_beta)) {
-#     message("Number of columns in design matrix is not the same as the number of rows in beta")
-#     print(paste(ncol(x_0), "!=", nrow(lasso_beta)))
-#     stop("exiting calc because of incombatable X and beta matrices")
-#   } else if (any(colnames(x_0) != rownames(lasso_beta))) {
-#     message("columns names of design matrix and model betas do not have the same names")
-#     print(kable(cbind.data.frame(
-#       column_no = 1:ncol(x_0),
-#       designmat_cns = colnames(x_0), 
-#       beta_rms = rownames(lasso_beta)
-#     )[colnames(x_0) != rownames(lasso_beta), , drop = FALSE])) 
-#     stop("exiting calc because of incombatable coefficient names")
-#   }
-#   
-#   pfit_linearalg <- b0 + x_0 %*% lasso_beta
-#   pfit_linearalg <- pfit_linearalg[1:nrow(df_dat), ]
-#   
-#   return(pfit_linearalg)
-#   
-# }
+
 
 
 incorperate_xlev_in_df <- function(df_dat, lvls) {
@@ -820,11 +780,6 @@ incorperate_xlev_in_df <- function(df_dat, lvls) {
 }
 
 
-### old
-# get_pred_w_ref_lvls <- function(mod_coefs, frm, df_dat, lvls, frm_rm_terms = NULL) {
-#   df_dat <- incorperate_xlev_in_df(df_dat, lvls)
-#   return(get_linearalg_pred_dat(mod_coefs, frm, df_dat, frm_rm_terms = frm_rm_terms))
-# }
 get_pred_w_ref_lvls <- function(df_dat, frm, beta_mat = beta_lasso_mat, frm_rm_terms = NULL, lvls = xlvl_lst) {
   df_dat <- incorperate_xlev_in_df(df_dat, lvls)
   return(get_linearalg_pred_dat(df_dat, frm, beta_mat = beta_mat, frm_rm_terms = frm_rm_terms))
