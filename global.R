@@ -115,6 +115,7 @@ psi4 <- compositions::gsi.buildilrBase(sbp4)
 
 
 default_covs_df <- read_rds(file = "dat/default_covs.rds")
+# print(default_covs_df)
 mod_form_cplx   <- read_rds(file = "dat/mod_form_cplx.rds")
 x_dsgn_meta     <- read_rds(file = "dat/x_dsgn_meta.rds")
 cols_rm_names   <- x_dsgn_meta$var_and_lvl[x_dsgn_meta$col_inc == 0L]
